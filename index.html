@@ -1,0 +1,356 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>НОВАЯ ЖИЗНЬ</title>
+<style>
+:root{color-scheme:dark;--bg:#080f1c;--panel:#121e30;--line:#29394e;--text:#f1f5fb;--muted:#93a5bd;--accent:#76e0b2}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{padding:20px 18px 12px;max-width:650px;margin:auto}
+.logo{font-size:21px;font-weight:900;letter-spacing:1px}
+.small{font-size:12px;color:var(--muted)}
+main{max-width:650px;margin:auto;padding:0 15px 110px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:17px;padding:17px;margin:13px 0}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+h2{font-size:19px;margin:0 0 14px}
+h3{font-size:15px;margin:0 0 10px}
+p{line-height:1.5}
+.muted{color:var(--muted)}
+.money{font-size:30px;font-weight:800;color:var(--accent)}
+button{background:#22364e;border:1px solid #39516c;color:white;border-radius:12px;padding:12px 15px;font-size:14px;font-weight:650;cursor:pointer}
+button.primary{background:var(--accent);color:#092219;border:0}
+button:disabled{opacity:.4}
+button.full{width:100%;margin-top:9px}
+input{width:100%;padding:14px;background:#0b1524;color:white;border:1px solid #40536a;border-radius:12px;font-size:16px;margin:7px 0}
+nav{position:fixed;bottom:0;left:0;right:0;background:#0c1726;border-top:1px solid var(--line);display:flex;justify-content:center;padding:8px 5px calc(8px + env(safe-area-inset-bottom));z-index:10}
+nav button{flex:1;max-width:130px;padding:10px 3px;background:transparent;border:0;color:var(--muted);font-size:11px}
+nav button.active{color:var(--accent)}
+nav span{display:block;font-size:21px;margin-bottom:4px}
+.stat{padding:10px 0;border-bottom:1px solid var(--line)}
+.stat:last-child{border:0}
+.tag{display:inline-block;background:#203d3c;color:var(--accent);padding:5px 9px;border-radius:8px;font-size:12px}
+.item{padding:14px 0;border-bottom:1px solid var(--line)}
+.item:last-child{border:0}
+.progress{height:8px;background:#28394c;border-radius:20px;overflow:hidden;margin:10px 0}
+.progress div{height:100%;background:var(--accent)}
+details{border-bottom:1px solid var(--line);padding:12px 0}
+summary{cursor:pointer;font-weight:650}
+.notice{position:fixed;top:15px;left:50%;transform:translateX(-50%);background:#285746;color:white;border-radius:12px;padding:13px 17px;z-index:30;max-width:90%;text-align:center}
+</style>
+</head>
+<body>
+<header>
+<div class="row">
+<div>
+<div class="logo">НОВАЯ ЖИЗНЬ</div>
+<div class="small">Симулятор жизни · версия 0.3</div>
+</div>
+<span class="tag">● Одиночная игра</span>
+</div>
+</header>
+<main id="app"></main>
+<nav id="nav"></nav>
+<script>
+"use strict";
+
+const KEY="nova_life_v03";
+const jobs=[
+{name:"Курьер",salary:550,education:0,reputation:0},
+{name:"Продавец",salary:800,education:0,reputation:5},
+{name:"Офисный сотрудник",salary:1400,education:1,reputation:10},
+{name:"Менеджер",salary:2300,education:2,reputation:25},
+{name:"Директор",salary:4500,education:3,reputation:50}
+];
+const goods=[
+{name:"Продукты",price:250,description:"Повседневные расходы"},
+{name:"Одежда",price:900,description:"Новая одежда"},
+{name:"Смартфон",price:6500,description:"Личная электроника"},
+{name:"Ноутбук",price:18000,description:"Для работы и учёбы"},
+{name:"Велосипед",price:4500,description:"Личный транспорт"},
+{name:"Автомобиль",price:180000,description:"Первый автомобиль"}
+];
+const levels=["Школа","Среднее образование","Колледж","Университет"];
+let state=null;
+let tab="home";
+let toastTimer;
+
+function fresh(name){
+return{
+name:name.trim().slice(0,32),age:16,day:1,
+cash:3000,bank:0,education:0,study:0,
+job:-1,reputation:0,energy:100,
+owned:[],transactions:[],salaryEarned:0
+};
+}
+function load(){
+try{
+const data=JSON.parse(localStorage.getItem(KEY));
+if(data&&typeof data.name==="string"&&Array.isArray(data.owned)&&Array.isArray(data.transactions)){
+return data;
+}
+}catch(e){}
+return null;
+}
+function save(){localStorage.setItem(KEY,JSON.stringify(state));}
+function money(n){return Math.floor(n).toLocaleString("ru-RU")+" ₴";}
+function safe(t){return String(t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function notice(message){
+const old=document.querySelector(".notice");
+if(old)old.remove();
+const el=document.createElement("div");
+el.className="notice";el.textContent=message;
+document.body.appendChild(el);
+clearTimeout(toastTimer);
+toastTimer=setTimeout(()=>el.remove(),2600);
+}
+function record(label,amount){
+state.transactions.unshift({day:state.day,label,amount});
+state.transactions=state.transactions.slice(0,35);
+}
+function update(){save();render();}
+function start(){
+const input=document.getElementById("playerName");
+const name=input.value.trim();
+if(name.length<2){notice("Введите имя минимум из 2 символов");return;}
+state=fresh(name);tab="home";update();
+}
+function nextDay(){
+state.day++;
+if(state.day%30===0)state.age++;
+state.energy=Math.min(100,state.energy+25);
+if(state.job>=0){
+const wage=jobs[state.job].salary;
+state.cash+=wage;
+state.salaryEarned+=wage;
+record("Зарплата: "+jobs[state.job].name,wage);
+}
+update();notice("Наступил новый день");
+}
+function study(){
+if(state.education>=3){notice("Образование завершено");return;}
+if(state.energy<20){notice("Не хватает энергии");return;}
+const fee=state.education===0?0:state.education===1?150:350;
+if(state.cash<fee){notice("Не хватает денег на обучение");return;}
+state.cash-=fee;state.energy-=20;state.study++;
+if(fee)record("Обучение",-fee);
+if(state.study>=5){
+state.study=0;state.education++;
+state.reputation+=5;
+notice("Новый уровень образования!");
+}else notice("Занятие завершено");
+update();
+}
+function hire(i){
+const j=jobs[i];
+if(state.age<18){notice("Работать можно с 18 лет");return;}
+if(state.education<j.education||state.reputation<j.reputation){
+notice("Не выполнены требования");return;
+}
+state.job=i;state.reputation+=2;
+update();notice("Вы устроились на работу!");
+}
+function buy(i){
+const g=goods[i];
+if(state.cash<g.price){notice("Недостаточно денег");return;}
+state.cash-=g.price;state.owned.push(g.name);
+state.reputation++;
+record("Покупка: "+g.name,-g.price);
+update();notice("Покупка совершена!");
+}
+function transfer(toBank){
+const el=document.getElementById("transferAmount");
+const amount=Number(el.value);
+if(!Number.isSafeInteger(amount)||amount<=0){notice("Введите целую сумму больше нуля");return;}
+if(toBank){
+if(state.cash<amount){notice("Недостаточно наличных");return;}
+state.cash-=amount;state.bank+=amount;
+record("Внесено в банк",-amount);
+}else{
+if(state.bank<amount){notice("Недостаточно денег на счёте");return;}
+state.bank-=amount;state.cash+=amount;
+record("Снято со счёта",amount);
+}
+update();notice("Операция выполнена");
+}
+function stat(label,value){
+return `<div class="row stat"><span class="muted">${label}</span><b>${value}</b></div>`;
+}
+function home(){
+return `
+<div class="card">
+<div class="row">
+<div>
+<div class="small">ВАШ ПЕРСОНАЖ</div>
+<h2 style="margin:7px 0">${safe(state.name)}</h2>
+<span class="tag">${state.age} лет · День ${state.day}</span>
+</div>
+<div style="font-size:55px">🧑</div>
+</div>
+${stat("Репутация",state.reputation+" ★")}
+${stat("Образование",levels[state.education])}
+${stat("Работа",state.job<0?"Безработный":jobs[state.job].name)}
+</div>
+<div class="card">
+<div class="small">НАЛИЧНЫЕ</div>
+<div class="money">${money(state.cash)}</div>
+<div class="muted">На банковском счёте: ${money(state.bank)}</div>
+</div>
+<div class="card">
+<h3>Игровое время</h3>
+<p class="muted">Один игровой день приносит зарплату, если вы трудоустроены. Каждые 30 дней персонаж становится старше на год.</p>
+<button class="primary full" onclick="nextDay()">☀️ Следующий день</button>
+</div>
+<div class="card">
+<h3>Быстрые действия</h3>
+<div class="row">
+<button onclick="go('education')">🎓 Учиться</button>
+<button onclick="go('work')">💼 Работа</button>
+<button onclick="go('shop')">🛒 Магазин</button>
+</div>
+</div>`;
+}
+function profile(){
+const income=state.transactions.filter(t=>t.amount>0).reduce((s,t)=>s+t.amount,0);
+const expenses=-state.transactions.filter(t=>t.amount<0).reduce((s,t)=>s+t.amount,0);
+return `
+<div class="card">
+<h2>👤 Профиль</h2>
+${stat("Имя",safe(state.name))}
+${stat("Возраст",state.age+" лет")}
+${stat("Игровой день",state.day)}
+${stat("Репутация",state.reputation)}
+${stat("Общий капитал",money(state.cash+state.bank))}
+<details><summary>💼 Карьера</summary>
+${stat("Должность",state.job<0?"Нет":jobs[state.job].name)}
+${stat("Заработано за всё время",money(state.salaryEarned))}
+</details>
+<details><summary>💰 Финансы</summary>
+${stat("Наличные",money(state.cash))}
+${stat("Банк",money(state.bank))}
+${stat("Доходы по истории",money(income))}
+${stat("Расходы по истории",money(expenses))}
+<h3 style="margin-top:16px">Последние операции</h3>
+${state.transactions.length?state.transactions.slice(0,12).map(t=>`<div class="row stat"><span class="small">День ${t.day} · ${safe(t.label)}</span><b style="color:${t.amount<0?"#f5a7a7":"#76e0b2"}">${t.amount>0?"+":""}${money(t.amount)}</b></div>`).join(""):'<p class="muted">Операций пока нет</p>'}
+</details>
+<details><summary>🎓 Образование</summary>
+${stat("Уровень",levels[state.education])}
+${stat("Прогресс",state.study+"/5")}
+</details>
+<details><summary>🏠 Имущество</summary>
+${state.owned.length?state.owned.map(x=>`<div class="stat">${safe(x)}</div>`).join(""):'<p class="muted">Пока ничего нет</p>'}
+</details>
+<details><summary>👨‍👩‍👧 Семья</summary>
+<p class="muted">Семья, дети и наследование появятся в следующих версиях.</p>
+</details>
+</div>
+<div class="card"><button class="full" onclick="resetGame()">Начать новую жизнь</button></div>`;
+}
+function education(){
+const completed=state.education>=3;
+return `
+<div class="card">
+<h2>🎓 Образование</h2>
+<p class="muted">Образование открывает доступ к более высокооплачиваемым профессиям.</p>
+${stat("Текущий уровень",levels[state.education])}
+${stat("Энергия",state.energy+"/100")}
+${stat("Прогресс",completed?"Завершено":state.study+"/5 занятий")}
+<div class="progress"><div style="width:${completed?100:state.study*20}%"></div></div>
+${completed?'<p class="tag">Все уровни пройдены</p>':`
+<p class="small">Стоимость занятия: ${money(state.education===0?0:state.education===1?150:350)}</p>
+<button class="primary full" onclick="study()">📚 Посетить занятие</button>`}
+</div>
+<div class="card"><h3>Образовательная лестница</h3>
+${levels.map((x,i)=>stat(x,i<=state.education?"✓":"🔒")).join("")}
+</div>`;
+}
+function work(){
+return `
+<div class="card">
+<h2>💼 Карьера</h2>
+${stat("Возраст",state.age+" лет")}
+${stat("Репутация",state.reputation)}
+${stat("Текущая работа",state.job<0?"Нет":jobs[state.job].name)}
+<p class="muted">Зарплата начисляется за каждый игровой день.</p>
+</div>
+<div class="card">
+<h3>Вакансии</h3>
+${jobs.map((j,i)=>{
+const allowed=state.age>=18&&state.education>=j.education&&state.reputation>=j.reputation;
+return `<div class="item">
+<div class="row"><b>${j.name}</b><span class="tag">${money(j.salary)}/день</span></div>
+<p class="small">Образование: ${levels[j.education]} · Репутация: ${j.reputation}+</p>
+<button ${!allowed||state.job===i?"disabled":""} onclick="hire(${i})">${state.job===i?"Вы работаете здесь":allowed?"Устроиться":"Недоступно"}</button>
+</div>`;
+}).join("")}
+</div>`;
+}
+function shop(){
+return `
+<div class="card"><h2>🛒 Магазин</h2>
+<div class="muted">Ваши наличные</div><div class="money">${money(state.cash)}</div></div>
+<div class="card">
+${goods.map((g,i)=>`<div class="item">
+<div class="row"><b>${g.name}</b><span class="tag">${money(g.price)}</span></div>
+<p class="small">${g.description}</p>
+<button ${state.cash<g.price?"disabled":""} onclick="buy(${i})">Купить</button>
+</div>`).join("")}
+</div>`;
+}
+function bank(){
+return `
+<div class="card">
+<h2>🏦 Банк</h2>
+<div class="small">БАНКОВСКИЙ СЧЁТ</div>
+<div class="money">${money(state.bank)}</div>
+${stat("Наличные",money(state.cash))}
+</div>
+<div class="card">
+<h3>Перевод между своими счетами</h3>
+<input id="transferAmount" type="number" min="1" step="1" placeholder="Сумма в ₴">
+<div class="row">
+<button class="primary" onclick="transfer(true)">Внести</button>
+<button onclick="transfer(false)">Снять</button>
+</div>
+<p class="small">Это только игровые деньги. Реальных платежей нет.</p>
+</div>`;
+}
+const pages={
+home:["🏠","Главная",home],
+profile:["👤","Профиль",profile],
+education:["🎓","Учёба",education],
+work:["💼","Работа",work],
+shop:["🛒","Магазин",shop],
+bank:["🏦","Банк",bank]
+};
+function go(t){tab=t;render();window.scrollTo(0,0);}
+function resetGame(){
+if(confirm("Удалить персонажа и весь прогресс на этом устройстве?")){
+localStorage.removeItem(KEY);state=null;tab="home";render();
+}
+}
+function render(){
+const app=document.getElementById("app");
+const nav=document.getElementById("nav");
+if(!state){
+nav.innerHTML="";
+app.innerHTML=`<div class="card" style="margin-top:35px">
+<div style="font-size:54px;text-align:center">🌆</div>
+<h2 style="text-align:center">Добро пожаловать в новую жизнь</h2>
+<p class="muted" style="text-align:center">Начните с 16 лет. Получите образование, постройте карьеру и заработайте свой первый капитал.</p>
+<label class="small" for="playerName">ИМЯ ПЕРСОНАЖА</label>
+<input id="playerName" maxlength="32" placeholder="Введите имя">
+<button class="primary full" onclick="start()">Создать персонажа</button>
+</div>`;
+return;
+}
+nav.innerHTML=Object.entries(pages).map(([key,p])=>`<button class="${tab===key?"active":""}" onclick="go('${key}')"><span>${p[0]}</span>${p[1]}</button>`).join("");
+app.innerHTML=pages[tab][2]();
+}
+state=load();
+render();
+</script>
+</body>
+</html>
